@@ -1,0 +1,98 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: penwave
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: penwave-frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from: [] # ALB targets pods directly via target-type: ip, outside cluster CNI identity, so this is intentionally open on ingress; restrict via Security Group instead if tightening further
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-backend
+  namespace: penwave
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: penwave-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: penwave-frontend
+        - namespaceSelector: {} # also allow ALB-direct /api/* routing per Ingress spec
+      ports:
+        - protocol: TCP
+          port: 4000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-egress
+  namespace: penwave
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: penwave-backend
+  policyTypes:
+    - Egress
+  egress:
+    - to: [] # RDS/Redis/AWS APIs are outside cluster CIDR; restrict by SG (already done in Terraform) rather than NetworkPolicy CIDR blocks
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-egress
+  namespace: penwave
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: penwave-frontend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: penwave-backend
+      ports:
+        - protocol: TCP
+          port: 4000
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

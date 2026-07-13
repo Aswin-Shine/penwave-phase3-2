@@ -1,0 +1,19 @@
+# Sensitive variable files — never commit
+environments/prod/secrets.tfvars
+environments/staging/secrets.tfvars
+environments/dev/secrets.tfvars
+
+# Local override files
+*.auto.tfvars
+override.tf
+override.tf.json
+
+# Terraform state — should live in S3, not git
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+tfplan
+
+penwave.ddns.net-key.pem
+penwave.ddns.net.pem

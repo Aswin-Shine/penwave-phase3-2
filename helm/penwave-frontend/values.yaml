@@ -1,0 +1,48 @@
+replicaCount: 2
+
+image:
+  repository: aswinshine/penwave-frontend
+  tag: latest
+  pullPolicy: Always
+
+serviceAccount:
+  name: penwave-frontend
+
+service:
+  port: 3000
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 400m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+probes:
+  liveness:
+    path: /
+    initialDelaySeconds: 15
+    periodSeconds: 15
+  readiness:
+    path: /
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+podDisruptionBudget:
+  minAvailable: 1
+
+config:
+  NODE_ENV: production
+  PORT: "3000"
+  HOSTNAME: "0.0.0.0"
+
+networkPolicy:
+  enabled: true

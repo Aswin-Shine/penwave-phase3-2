@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ConfigMap: penwave-backend-config
+#
+# Non-sensitive env vars only. The dividing line: would this value cause
+# harm if it showed up in a `kubectl describe configmap` output, a log
+# line, or a screenshot in a bug report? If no, it belongs here. If yes
+# (JWT secrets, DB password, cookie secret), it belongs in the Secret
+# synced by External Secrets Operator instead — see external-secrets/.
+#
+# DATABASE_URL and REDIS_URL are intentionally NOT here even though they
+# look like plain connection strings — they embed the DB password and
+# Redis auth token respectively, so they're assembled inside the Secret,
+# not here. See external-secrets/external-secret.yaml.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: penwave-backend-config
+  namespace: penwave
+  labels:
+    app.kubernetes.io/name: penwave-backend
+data:
+  NODE_ENV: "production"
+  PORT: "4000"
+  JWT_ACCESS_EXPIRES_IN: "15m"
+  JWT_REFRESH_EXPIRES_IN: "7d"
+  FRONTEND_URL: "https://penwave.ddns.net"
+  RATE_LIMIT_WINDOW_MS: "900000"
+  RATE_LIMIT_MAX_REQUESTS: "100"
+  AUTH_RATE_LIMIT_MAX: "10"
+  APP_NAME: "Penwave"
+  APP_URL: "https://penwave.ddns.net/api"

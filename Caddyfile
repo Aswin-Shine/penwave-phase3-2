@@ -1,0 +1,12 @@
+{
+	auto_https disable_redirects
+}
+penwave.ddns.net {
+	tls penwave.ddns.net.pem penwave.ddns.net-key.pem
+	handle /api/* {
+		reverse_proxy localhost:4000
+	}
+	handle {
+		reverse_proxy localhost:3000
+	}
+}

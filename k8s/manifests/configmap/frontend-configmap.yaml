@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: penwave-frontend-config
+  namespace: penwave
+  labels:
+    app.kubernetes.io/name: penwave-frontend
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  HOSTNAME: "0.0.0.0"

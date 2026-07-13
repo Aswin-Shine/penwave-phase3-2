@@ -1,0 +1,53 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Job: penwave-db-migrate
+#
+# ArgoCD PreSync hook. Runs `prisma migrate deploy` against RDS BEFORE the
+# backend Deployment is synced, so every fresh cluster gets a real schema
+# instead of reproducing the "table posts does not exist" incident from
+# Phase 3's first bring-up -- except now unattended, so if this fails
+# silently it fails unattended too. Watch the ArgoCD UI on first sync of a
+# new cluster, don't assume it worked because nothing complained.
+#
+# hook-delete-policy: HookSucceeded means this Job is cleaned up automatically
+# after a successful run but LEFT IN PLACE if it fails, so you can inspect
+# `kubectl logs` on the failed pod instead of it vanishing before you can
+# debug it.
+#
+# UNVERIFIED: I don't know what your actual migrate command is -- assuming
+# `npx prisma migrate deploy`, matching Prisma's standard production command.
+# If backend/package.json has a different script name for this, swap it in.
+# I also don't know what fixed the empty-schema incident originally, since
+# that was never confirmed earlier in this project -- if the real fix wasn't
+# "run migrate deploy" (e.g. it was a seed script, or migrate reset), this
+# Job does the wrong thing convincingly, not obviously.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: penwave-db-migrate
+  namespace: penwave
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: penwave-db-migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: "aswinshine/penwave-backend:latest"  # CI overwrites this tag on each push, see .github/workflows
+          command: ["npx", "prisma", "migrate", "deploy"]
+          envFrom:
+            - secretRef:
+                name: penwave-backend-connection-strings  # DATABASE_URL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

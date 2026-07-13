@@ -1,0 +1,124 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# App-of-apps root Application. Point ArgoCD at THIS ONE manifest manually
+# (or via `argocd app create` once, first time only) -- it then discovers
+# and manages the child Applications below on its own. Everything after
+# this first manual bootstrap is git-driven.
+#
+# PATH ASSUMPTION: assumes your repo has a k8s/argocd/apps/ directory
+# containing monitoring-app.yaml and backend-app.yaml (below). Adjust
+# `spec.source.path` to match your actual repo layout -- I don't have
+# visibility into it.
+#
+# REPO URL: replace <your-org>/<your-repo> with the actual GitHub path.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: penwave-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-org>/<your-repo>.git
+    targetRevision: main
+    path: k8s/argocd/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true      # deleting a child Application manifest from git deletes it from the cluster too
+      selfHeal: true    # manual kubectl edits to anything ArgoCD manages get reverted back to git's state
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# Child: monitoring stack (Prometheus, Grafana, kube-state-metrics, dashboards)
+#
+# PATH ASSUMPTION: k8s/monitoring/ containing 01 through 05 plus
+# db-migrate-hook.yaml would be wrong here -- that hook belongs with the
+# backend app, not monitoring. Keep it out of this directory.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: penwave-monitoring
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-org>/<your-repo>.git
+    targetRevision: main
+    path: k8s/monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# Child: backend app (Deployment, Service, ServiceAccount, migration hook)
+#
+# PATH ASSUMPTION: k8s/backend/ containing serviceaccount.yaml,
+# service.yaml (the patched version with scrape annotations), deployment.yaml,
+# and db-migrate-hook.yaml. Confirm this matches where those files actually
+# live in your repo -- they were sent to me as loose files, not as a path.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: penwave-backend
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-org>/<your-repo>.git
+    targetRevision: main
+    path: k8s/backend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: penwave
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# Child: frontend app (Deployment, Service, ServiceAccount)
+#
+# No sync-wave relative to backend -- frontend's readinessProbe only
+# checks itself (`/`), never backend connectivity, so it can become
+# Healthy independently. Worst case on a simultaneous first deploy: a
+# few seconds of 502s from the proxy route's own error handler while
+# backend catches up, not a crashed frontend pod. If that briefly-broken
+# window ever matters more than it does now, revisit with a sync-wave.
+#
+# PATH ASSUMPTION: k8s/frontend/ containing serviceaccount.yaml,
+# service.yaml, and the patched deployment.yaml (BACKEND_URL added).
+# Same caveat as every other path in this file -- confirm against your
+# actual repo layout.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: penwave-frontend
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-org>/<your-repo>.git
+    targetRevision: main
+    path: k8s/frontend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: penwave
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

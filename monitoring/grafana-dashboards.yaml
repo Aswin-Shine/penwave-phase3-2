@@ -1,0 +1,266 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: monitoring
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+data:
+  cluster-overview.json: |
+    {
+      "title": "Penwave EKS Cluster Overview",
+      "uid": "penwave-cluster-overview",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-3h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Nodes",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "targets": [
+            { "expr": "count(kube_node_info)", "refId": "A" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Pods (total)",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "targets": [
+            { "expr": "count(kube_pod_info)", "refId": "A" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Pods Not Running",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            { "expr": "sum(kube_pod_status_phase{phase!=\"Running\", phase!=\"Succeeded\"} == 1) OR vector(0)", "refId": "A" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Container Restarts (1h)",
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            { "expr": "sum(increase(kube_pod_container_status_restarts_total[1h])) OR vector(0)", "refId": "A" }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "CPU Usage by Node (cores)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [
+            { "expr": "sum(rate(container_cpu_usage_seconds_total{id=\"/\"}[5m])) by (node)", "legendFormat": "{{node}}", "refId": "A" }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Memory Usage by Node",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            { "expr": "sum(container_memory_working_set_bytes{id=\"/\"}) by (node)", "legendFormat": "{{node}}", "refId": "A" }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Pod Count by Namespace",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            { "expr": "count(kube_pod_info) by (namespace)", "legendFormat": "{{namespace}}", "refId": "A" }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Deployment Replicas: Available vs Desired",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [
+            { "expr": "kube_deployment_status_replicas_available", "legendFormat": "{{deployment}} available", "refId": "A" },
+            { "expr": "kube_deployment_spec_replicas", "legendFormat": "{{deployment}} desired", "refId": "B" }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "table",
+          "title": "Scrape Target Health",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+          "targets": [
+            { "expr": "up", "format": "table", "instant": true, "refId": "A" }
+          ]
+        }
+      ]
+    }
+  app-process.json: |
+    {
+      "title": "Penwave — App & Process",
+      "uid": "penwave-app-process",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Request Rate (req/s)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "reqps" } },
+          "targets": [
+            { "expr": "sum(rate(http_requests_total[1m]))", "legendFormat": "Total req/s", "refId": "A" },
+            { "expr": "sum(rate(http_requests_total{status=~\"2..\"}[1m]))", "legendFormat": "2xx", "refId": "B" },
+            { "expr": "sum(rate(http_requests_total{status=~\"5..\"}[1m]))", "legendFormat": "5xx", "refId": "C" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Latency (p50/p95/p99)",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A" },
+            { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B" },
+            { "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Error Rate %",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "thresholds": { "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] }
+            }
+          },
+          "targets": [
+            { "expr": "100 * sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m]))", "legendFormat": "Error %", "refId": "A" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Active HTTP Connections",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 8 },
+          "targets": [
+            { "expr": "sum(http_active_requests)", "legendFormat": "Active", "refId": "A" }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Event Loop Lag",
+          "gridPos": { "h": 4, "w": 12, "x": 12, "y": 8 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [
+            { "expr": "nodejs_nodejs_eventloop_lag_seconds", "legendFormat": "{{instance}}", "refId": "A" }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Process Memory",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            { "expr": "nodejs_process_resident_memory_bytes", "legendFormat": "RSS ({{instance}})", "refId": "A" },
+            { "expr": "nodejs_nodejs_heap_size_used_bytes", "legendFormat": "Heap Used ({{instance}})", "refId": "B" },
+            { "expr": "nodejs_nodejs_heap_size_total_bytes", "legendFormat": "Heap Total ({{instance}})", "refId": "C" }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "CPU Usage",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "fieldConfig": { "defaults": { "unit": "percent" } },
+          "targets": [
+            { "expr": "rate(nodejs_process_cpu_seconds_total[1m]) * 100", "legendFormat": "{{instance}}", "refId": "A" }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "GC Duration",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [
+            { "expr": "rate(nodejs_nodejs_gc_duration_seconds_sum[5m])", "legendFormat": "{{instance}}", "refId": "A" }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Open File Descriptors",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "targets": [
+            { "expr": "nodejs_process_open_fds", "legendFormat": "{{instance}}", "refId": "A" }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "stat",
+          "title": "Process Uptime",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 28 },
+          "fieldConfig": { "defaults": { "unit": "dtdurations" } },
+          "targets": [
+            { "expr": "time() - nodejs_process_start_time_seconds", "legendFormat": "{{instance}}", "refId": "A" }
+          ]
+        }
+      ]
+    }

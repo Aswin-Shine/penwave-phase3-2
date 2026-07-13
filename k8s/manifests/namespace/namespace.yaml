@@ -1,0 +1,16 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Namespace: penwave
+#
+# All application workloads (frontend, backend) live here. Kept separate
+# from external-secrets and argocd namespaces, which are platform/system
+# concerns, not application concerns — this separation is what lets you
+# apply different RBAC, ResourceQuotas, and NetworkPolicies to "my app"
+# vs "my platform tooling" later without them bleeding into each other.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: penwave
+  labels:
+    name: penwave
+    app.kubernetes.io/part-of: penwave

@@ -1,0 +1,13 @@
+apiVersion: eks.amazonaws.com/v1
+kind: NodeClass
+metadata:
+  name: default
+spec:
+  role: penwave-eks-prod-node-role
+  subnetSelectorTerms:
+    - id: subnet-00f6325c5d5a50b89
+    - id: subnet-00613e15671dcd5df
+    - id: subnet-0343baf9a94d11187
+    - id: subnet-0a2d7e449fb1f711b
+  securityGroupSelectorTerms:
+    - id: sg-0564eb970eebe510f

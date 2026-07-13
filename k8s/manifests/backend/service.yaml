@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Service: penwave-backend
+#
+# ClusterIP (default, not LoadBalancer) — the backend is never exposed
+# directly to the internet. The Ingress (see ../ingress/ingress.yaml)
+# routes /api/* to this Service; everything else goes to the frontend.
+# This means the backend's only network exposure is via the Ingress
+# controller's own ALB, which can apply WAF rules, rate limiting, and TLS
+# termination in one place rather than duplicating that logic per-service.
+#
+# PROMETHEUS SCRAPE ANNOTATIONS ADDED BELOW:
+# Picked up automatically by the `kubernetes-service-endpoints` job in
+# the cluster's Prometheus config (monitoring namespace) — no separate
+# scrape job needed, and no cross-namespace config required since that
+# job discovers Services across all namespaces.
+#
+# UNCONFIRMED: this assumes the container still exposes a /metrics route
+# via prom-client (true in Phase 2, not verified against this image).
+# If it doesn't, this Service becomes scrapeable but returns nothing —
+# up=1 with zero metric families, not an error, so it won't be obvious
+# from Prometheus's target status alone.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: penwave-backend
+  namespace: penwave
+  labels:
+    app.kubernetes.io/name: penwave-backend
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "4000"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: penwave-backend
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000
+      protocol: TCP

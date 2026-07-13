@@ -1,0 +1,68 @@
+replicaCount: 2
+
+image:
+  repository: aswinshine/penwave-backend
+  tag: latest
+  pullPolicy: Always
+
+serviceAccount:
+  name: penwave-backend
+  # output of: terraform output backend_irsa_role_arn
+  irsaRoleArn: "arn:aws:iam::REPLACE_ACCOUNT_ID:role/penwave-irsa-backend-prod"
+
+service:
+  port: 4000
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+probes:
+  liveness:
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 15
+  readiness:
+    path: /ready
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+podDisruptionBudget:
+  minAvailable: 1
+
+config:
+  NODE_ENV: production
+  PORT: "4000"
+  JWT_ACCESS_EXPIRES_IN: 15m
+  JWT_REFRESH_EXPIRES_IN: 7d
+  FRONTEND_URL: https://penwave.ddns.net
+  RATE_LIMIT_WINDOW_MS: "900000"
+  RATE_LIMIT_MAX_REQUESTS: "100"
+  AUTH_RATE_LIMIT_MAX: "10"
+  APP_NAME: Penwave
+  APP_URL: https://penwave.ddns.net/api
+
+# Name of the K8s Secret created by the ExternalSecret (ESO-managed)
+externalSecretName: penwave-backend-secrets
+# Name of the manually-applied Secret with assembled DATABASE_URL/REDIS_URL
+connectionStringsSecretName: penwave-backend-connection-strings
+
+externalSecret:
+  enabled: true
+  refreshInterval: 1h
+  secretStoreName: aws-secrets-manager
+  remoteKey: penwave/prod/app-secrets
+
+networkPolicy:
+  enabled: true

@@ -1,0 +1,152 @@
+---
+# Plaintext Secret -- fastest path to get this running, but given your
+# own notes flag committed prod credentials as a critical past incident,
+# don't apply this as-is in anything you'd keep. Either:
+#   a) kubectl create secret generically at deploy time (never commit this
+#      file with a real password filled in), or
+#   b) replace this Secret entirely with an ExternalSecret pointing at
+#      AWS Secrets Manager, reusing the ESO + IRSA setup you already have
+#      working for RDS/Redis creds. See the commented block at the bottom
+#      of this file for that version.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-admin
+  namespace: monitoring
+type: Opaque
+stringData:
+  admin-user: admin
+  admin-password: CHANGE_ME_BEFORE_APPLYING
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus.monitoring.svc.cluster.local:9090
+        isDefault: true
+        editable: false
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.1.0
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-user
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-password
+            # No subpath/subdomain routing configured -- your No-IP tier
+            # is single-hostname only (same reason Grafana was accessed
+            # via SSH tunnel in Phase 1/2). Access this the same way:
+            # kubectl port-forward svc/grafana -n monitoring 3000:3000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+            - name: storage
+              mountPath: /var/lib/grafana
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+        - name: storage
+          # emptyDir: dashboards you build by hand in the UI will not
+          # survive a pod restart, let alone a cluster teardown. If you
+          # want dashboards to persist without an EBS-backed PVC, provision
+          # them as ConfigMap-mounted JSON under
+          # /etc/grafana/provisioning/dashboards instead of clicking them
+          # together in the UI.
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP
+
+---
+# ExternalSecret alternative for grafana-admin, reusing the ESO + IRSA
+# path already proven working for RDS/Redis. Requires a SecretStore
+# already pointed at AWS Secrets Manager (which you should have from the
+# RDS/Redis ESO setup) and a secret at the given path with keys
+# `admin-user` / `admin-password`. Delete the plaintext Secret above if
+# you use this.
+#
+# apiVersion: external-secrets.io/v1beta1
+# kind: ExternalSecret
+# metadata:
+#   name: grafana-admin
+#   namespace: monitoring
+# spec:
+#   refreshInterval: 1h
+#   secretStoreRef:
+#     name: aws-secrets-manager   # match your existing SecretStore name
+#     kind: SecretStore
+#   target:
+#     name: grafana-admin
+#     creationPolicy: Owner
+#   data:
+#     - secretKey: admin-user
+#       remoteRef:
+#         key: penwave/grafana-admin
+#         property: admin-user
+#     - secretKey: admin-password
+#       remoteRef:
+#         key: penwave/grafana-admin
+#         property: admin-password

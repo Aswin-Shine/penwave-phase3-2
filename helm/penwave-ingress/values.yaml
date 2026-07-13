@@ -1,0 +1,10 @@
+host: penwave.ddns.net
+certificateArn: "arn:aws:acm:us-east-1:REPLACE_ACCOUNT_ID:certificate/REPLACE_CERT_ID"
+
+backend:
+  serviceName: penwave-backend
+  servicePort: 4000
+
+frontend:
+  serviceName: penwave-frontend
+  servicePort: 3000

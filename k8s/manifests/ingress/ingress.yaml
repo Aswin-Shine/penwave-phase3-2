@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Ingress: penwave
+#
+# Requires the AWS Load Balancer Controller installed (not covered by this
+# manifest set — it's a Helm install against the cluster, similar to ESO):
+#   helm repo add eks https://aws.github.io/eks-charts
+#   helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+#     -n kube-system --set clusterName=penwave-eks-prod \
+#     --set serviceAccount.create=true
+#
+# The annotations below are what actually configures the resulting ALB —
+# Kubernetes' native Ingress spec has no concept of "ALB scheme" or
+# "health check path"; those are AWS-specific behaviors the controller
+# reads from annotations and translates into real ALB/Target Group API
+# calls.
+#
+# ROUTING PRESERVED FROM PHASE 2's nginx.conf (see docs/kubernetes.md for
+# the full mapping):
+#   /api/*           → backend service, port 4000
+#   /*  (everything else) → frontend service, port 3000
+#
+# NOT PRESERVED HERE, INTENTIONALLY: nginx.conf's per-path rate limiting
+# zones (general/auth/api with different rates) and the explicit
+# `location /metrics { deny all; }` block. ALB Ingress doesn't have an
+# equivalent to nginx's limit_req_zone directives — that responsibility
+# moves to either AWS WAF (attached to the ALB, not configured here) or
+# application-level rate limiting (which Penwave's backend already has
+# via express-rate-limit, per env.ts's RATE_LIMIT_* vars — so this isn't
+# a total gap, just a different layer doing the same job). The /metrics
+# block-from-public behavior is preserved differently: see
+# backend/src/app.ts's metricsAuthMiddleware requiring a Bearer token —
+# that's an application-layer control already, independent of nginx, so
+# it doesn't need an Ingress-level equivalent at all.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: penwave
+  namespace: penwave
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip # required for Auto Mode/Fargate-style pod networking; "instance" target type doesn't work the same way
+
+    # TLS terminates at the ALB. Cert comes from ACM, not Let's Encrypt —
+    # this is a deliberate change from Phase 2's certbot/webroot approach.
+    # REPLACE with your actual ACM certificate ARN after requesting one:
+    #   aws acm request-certificate --domain-name penwave.ddns.net --validation-method DNS
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:<ACCOUNT_ID>:certificate/<CERT_ID>"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+
+    alb.ingress.kubernetes.io/healthcheck-path: /ready
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+
+    # Security headers the ALB itself can't add (unlike nginx's add_header
+    # directives) — these need to come from the application instead.
+    # Penwave's backend already sets these via helmet() in app.ts, and
+    # next.config.ts sets them for the frontend — so this is preserved at
+    # the application layer, not lost in the Ingress migration.
+spec:
+  ingressClassName: alb
+  rules:
+    - host: penwave.ddns.net
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: penwave-backend
+                port:
+                  number: 4000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: penwave-frontend
+                port:
+                  number: 3000

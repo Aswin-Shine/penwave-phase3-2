@@ -1,0 +1,153 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Deployment: penwave-backend
+#
+# replicas: 2 — minimum for any meaningful availability story. With 1
+# replica, every deploy is a brief outage (pod terminates, new one starts,
+# gap in between unless you tune maxUnavailable/maxSurge carefully). With
+# 2, a rolling update can take one down while the other still serves
+# traffic. Also the practical floor for HorizontalPodAutoscaler to do
+# anything meaningful — scaling from 1 is really "creating a 2nd", scaling
+# from 2 is real autoscaling behavior.
+#
+# RESOURCE SIZING RATIONALE (t3.medium = 2 vCPU / 4GB RAM per node):
+# requests.cpu 250m / requests.memory 256Mi: conservative starting point
+# for a Node.js/Express API with Prisma + ioredis. This is NOT measured
+# from profiling — you said to use conservative defaults sized for the
+# node type. If you profile actual usage under load later (see
+# docs/kubernetes.md "Right-sizing" section for how), adjust based on real
+# numbers, not these placeholders.
+# limits.cpu 500m: caps at 2x request — allows bursting for request
+# spikes without one runaway pod starving its node-mate.
+# limits.memory 512Mi: hard ceiling — if the process leaks or genuinely
+# needs more, OOMKilled is the correct outcome (visible failure) rather
+# than silently degrading the node for every other pod on it.
+#
+# math check against t3.medium: system pods (kube-proxy, CoreDNS, AWS
+# Load Balancer Controller webhook, CSI node driver) typically reserve
+# ~700-900Mi and ~200-300m CPU on a 4GB node before any application pod
+# is scheduled. 2 backend replicas at 256Mi request = 512Mi, 2 frontend
+# replicas (see frontend deployment) at similar sizing = roughly another
+# 512Mi-1Gi. This is tight on a single t3.medium node — Auto Mode should
+# scale out a second node once you deploy both Deployments at 2 replicas
+# each. If you see Pending pods with "Insufficient memory" in
+# `kubectl describe pod`, that's Auto Mode correctly waiting to add
+# capacity, not a misconfiguration.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: penwave-backend
+  namespace: penwave
+  labels:
+    app.kubernetes.io/name: penwave-backend
+    app.kubernetes.io/part-of: penwave
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: penwave-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: penwave-backend
+        app.kubernetes.io/part-of: penwave
+      annotations:
+        # Forces a rolling restart when the ConfigMap/Secret content
+        # changes, even though the Deployment spec itself didn't change.
+        # Without this, pods keep running with STALE env vars after a
+        # `kubectl apply` to the ConfigMap, because Kubernetes does not
+        # restart pods automatically when a referenced ConfigMap/Secret
+        # changes — only the K8s API object updates, not the running
+        # container's environment. Update this value (or use a tool like
+        # Reloader/Stakater) whenever you change backend-configmap.yaml.
+        config-checksum: "v1"
+    spec:
+      serviceAccountName: penwave-backend
+      automountServiceAccountToken: true # REQUIRED for IRSA — do not set to false
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001 # matches the "penwave" user created in backend/Dockerfile
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: backend
+          image: "aswinshine/penwave-backend:latest"
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: penwave-backend-config
+            - secretRef:
+                name: penwave-backend-secrets # from ExternalSecret
+            - secretRef:
+                name: penwave-backend-connection-strings # DATABASE_URL, REDIS_URL
+
+          # Liveness: is the process alive? NO external dependency checks —
+          # checking DB/Redis here would cause Kubernetes to kill and
+          # restart a perfectly healthy backend pod just because RDS had a
+          # momentary network blip, creating a restart storm that makes a
+          # transient DB issue into a full application outage. This
+          # exact distinction is why backend/src/middleware/health.ts
+          # split /health and /ready into two separate handlers.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Readiness: can this pod serve traffic right now? DOES check
+          # DB + Redis. If either is down, this pod is pulled from the
+          # Service's load-balancing rotation (no traffic sent to it) but
+          # is NOT restarted — exactly the right behavior when the
+          # problem is "RDS is temporarily unreachable", not "this pod is
+          # broken."
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # backend/Dockerfile's runtime stage has no writable dirs besides
+          # what Node.js itself needs at runtime (npm cache dir, tmp).
+          # Mirrors the read_only: true + tmpfs pattern already used in
+          # docker-compose.prod.yml for the same container.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+
+      terminationGracePeriodSeconds: 15 # backend/src/server.ts shuts down within 10s, +5s buffer
