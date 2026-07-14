@@ -16,7 +16,7 @@
 
 resource "aws_s3_bucket" "media" {
   bucket        = var.s3_media_bucket_name
-  force_destroy = true # learning project, allow clean teardown without manually emptying bucket
+  force_destroy = true  #learning project, allow clean teardown without manually emptying bucket
 
   tags = { Name = "${var.project}-media-${var.environment}" }
 }

@@ -47,7 +47,7 @@ redis_node_type = "cache.t3.micro"
 # ── S3 ────────────────────────────────────────────────────────────────────────
 # Must be globally unique across ALL AWS accounts, not just yours.
 # Append your AWS account ID or a random suffix if this is taken.
-s3_media_bucket_name = "penwave-media-prod-aswin"
+s3_media_bucket_name = "penwave-media-prod-aswin0407"
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 dockerhub_username = "your-dockerhub-username"
